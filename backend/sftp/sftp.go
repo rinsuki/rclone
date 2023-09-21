@@ -1401,6 +1401,39 @@ func (f *Fs) Move(ctx context.Context, src fs.Object, remote string) (fs.Object,
 	return dstObj, nil
 }
 
+// Copy renames a remote sftp file object
+func (f *Fs) Copy(ctx context.Context, src fs.Object, remote string) (fs.Object, error) {
+	srcObj, ok := src.(*Object)
+	if !ok {
+		fs.Debugf(src, "Can't copy - not same remote type")
+		return nil, fs.ErrorCantCopy
+	}
+	err := f.mkParentDir(ctx, remote)
+	if err != nil {
+		return nil, fmt.Errorf("Copy mkParentDir failed: %w", err)
+	}
+	c, err := f.getSftpConnection(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("Copy: %w", err)
+	}
+	srcPath, dstPath := srcObj.path(), path.Join(f.absRoot, remote)
+	// // Remove dst first?
+	// err = c.sftpClient.Remove(dstPath)
+	// if err != nil && !errors.Is(err, iofs.ErrNotExist) {
+	// 	fs.Errorf(f, "Copy: Failed to remove existing file %q: %v", dstPath, err)
+	// }
+	err = c.sftpClient.Link(srcPath, dstPath)
+	f.putSftpConnection(&c, err)
+	if err != nil {
+		return nil, fmt.Errorf("Copy failed: %w", err)
+	}
+	dstObj, err := f.NewObject(ctx, remote)
+	if err != nil {
+		return nil, fmt.Errorf("Copy NewObject failed: %w", err)
+	}
+	return dstObj, nil
+}
+
 // DirMove moves src, srcRemote to this remote at dstRemote
 // using server-side move operations.
 //
@@ -2120,6 +2153,7 @@ var (
 	_ fs.Fs          = &Fs{}
 	_ fs.PutStreamer = &Fs{}
 	_ fs.Mover       = &Fs{}
+	_ fs.Copier      = &Fs{}
 	_ fs.DirMover    = &Fs{}
 	_ fs.Abouter     = &Fs{}
 	_ fs.Shutdowner  = &Fs{}
